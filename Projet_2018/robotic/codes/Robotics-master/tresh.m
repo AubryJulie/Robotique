@@ -1,0 +1,10 @@
+im = imread('test1.png');
+imshow(im);
+redTresh = [240 80 80];
+yellowTresh = [254 254 10];
+greenTresh = [80 240 80];
+blueTresh = [80 80 240];
+purpleTresh = [240 80 240];
+whiteTresh = [240 240 240];
+res = colorTresh(im,redTresh);
+imshow(res);

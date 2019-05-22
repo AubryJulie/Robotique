@@ -1,0 +1,17 @@
+Pour le trajectory:
+Avant d'utiliser le trajectory complet faire un simple trajectory qui permet de vérifier si l'une des deux trajectoires:
+-avancer selon y pui x pour atteindre la target
+-avancer selon x puis y pour atteindre la target
+est possible.
+Si le trajet est possible ne pas utiliser le trajectory complet => permet d'avoir de simple trajet bien droit.
+
+Pour Check_map:
+pour éviter de tourner autour des tables. Lorqu'on trouve la pair unexplored_cell et free_cell, 
+regarder autour de unexplored_cell si ses voisins sont égalements inexploré. Si c'est le cas target = neighbor of free_cell  sinon trouver une autre target.
+!!! possible que ça ne marche pas à cause des cases inexplorées à l'intérieur des cases.!!!
+variante :  regarder que tout les voisins sauf 1/2 sont exploré -> si c'est le case ne pas aller explorer dans ce coin là.
+
+Pour éviter passer des pièces du bas aux pièces près des tables; -> long déplacements inutiles
+1) On pourrait dans le check-map ne pas s'arrêter à la première case trouvée mais prendre la plus proche
+2) On pourrait dans le check-map utiliser trajectory et trouver une case dont le trajet n'est pas trop long.
+!!! problème définir la taille d'un trajet trop long !!! -> réupdate cette taille si tout les trajets deviennent trop long!!!

@@ -1,0 +1,232 @@
+%!TeX spellcheck = en-GB
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{titling}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{epstopdf}
+\usepackage{subfigure}
+\usepackage{float}
+\usepackage{placeins}
+\usepackage{wrapfig}
+\usepackage{diagbox}
+\usepackage{eurosym}
+\usepackage{hyperref}
+\usepackage{pbox}
+\usepackage{fancyhdr}
+\usepackage[a4paper]{geometry}
+
+\geometry{hscale=0.8,vscale=0.8,centering}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Germay Nicolay}
+\fancyhead[R]{\leftmark}
+\cfoot{\thepage}
+\setlength{\droptitle}{-6em}
+
+
+\begin{document}
+% Page de garde
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{titlepage}
+  \hbox{
+  \hspace*{0.2\textwidth}
+  \rule{1pt}{\textheight}
+  \hspace*{0.05\textwidth}
+  \parbox[b]{0.75\textwidth}{ % P
+  \begin{flushleft}
+    {\noindent\Huge\bfseries Introduction to intelligent robotics}\\[2\baselineskip]
+    {\Large \textit{Project report }}\\[4\baselineskip]
+    {\large \textsc{Nicolay Pierre, Germay Antoine \linebreak \linebreak \linebreak Academic year 2016--2017}}
+  \end{flushleft}
+  \vspace{0.46\textheight}
+  \includegraphics[width=0.3\linewidth]{Fig/logoULg.jpg}
+  }}
+
+\end{titlepage}
+
+\tableofcontents
+
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Fin page de garde
+
+\section{Holonomic controller}
+\subsection{Description of the algorithm used }
+\paragraph{} To use at most the capabilities of the youbot a controller able to give a longitudinal and transversal speed is needed. A convenient solution to control a robot is to use a pure pursuit method. This method computes the speeds from the robot's position and a look-ahead point on a path to follow.
+
+\paragraph{} In the framework of this project, this algorithm is implemented in a class \texttt{HolonomicPursuit}. This class also  implements several methods to control the youbot position around tables or baskets.
+
+\subsection{\texttt{step} method of \texttt{HolonomicPursuit}}
+\paragraph{} This is the most important method of the class as many other methods of the class rely on it.
+
+\paragraph{} \texttt{step} takes as arguments \texttt{obj}, a reference to an instance of the class and \texttt{position}, a vector containing the $x$ $y$ positions of the youbot and its angular position, all in the map reference frame. The output of the method are the longitudinal, transversal and rotation speed of the youbot.
+
+\paragraph{} Ideally the path to follow should be continuous. However, the path to follow takes form of collection of points in the map reference frame that are contained in \texttt{obj.pathPoints} (set with \texttt{setPathPoints}). Thus, linear interpolations are performed if needed.
+
+\subsubsection{Longitudinal and transversal speeds} \label{sec:longTransSpeed}
+\paragraph{} Firstly, the method search for the closest point of \texttt{obj.pathPoints} to the youbot. This point is the starting point from which the look-ahead point is obtained. The distance on the path, between the closest point and the look-ahead point is the look-ahead distance. This distance should not be too small otherwise oscillations may occur. On the other hand, if this distance is too large the real trajectory of the robot cuts the path to follow and the robot may hit walls.
+
+\paragraph{} Then the algorithm adds the length of the different segments of the path starting from the closest point. When this sum is greater than the look-ahead distance, the algorithm knows that the look-ahead point is somewhere on the last segment whose length has been computed. In most cases the look-ahead point does not correspond to a point of \texttt{obj.pathPoints} but is an interpolation of two of its points. The problem to find the interpolation parameter is explained here after.
+
+\paragraph{} The segment containing the look-ahead point is delimited by $A$ and $B$ that both belongs to the path. The equation of that segment in the map reference frame is:
+
+\begin{equation}
+  y = m (x-x_A) + y_A\label{eq:line}
+\end{equation}
+
+\paragraph{} Where $m=\dfrac{y_B-y_A}{x_B-x_A}$ is the slope of the segment\footnote{When the slope is infinite the problem becomes trivial (one dimension).}. The look-ahead point is the intersection of that line with a circle centred in $A$ of radius $d$, $d$ being the remaining distance to cover so that the sum of lengths discussed before is equal to the look-ahead distance. The equation of the circle is:
+
+\begin{equation}
+  (x-x_A)^2+(y-y_A)^2 = d^2 \label{eq:circle}
+\end{equation}
+
+\paragraph{} Substituting equation \ref{eq:line} in equation \ref{eq:circle}, equation \ref{eq:circle} becomes:
+
+\begin{equation}
+  (x-x_A)^2+m^2(x-x_A)^2 = d^2\label{eq:problem}
+\end{equation}
+
+\paragraph{} Which is a second order equation that has two solutions\footnote{$y$ of the look-ahead point is obtained by injecting the solution of equation \ref{eq:problem} in equation \ref{eq:line}.}, one such that the interpolated point is in between the two points used for the interpolation and one such that the interpolated point is not in between the two points used for the interpolation. The first solution corresponds to the look-ahead point.
+
+\paragraph{} If the look-ahead point is beyond the end of the path or if the closest point is the end of the path, then the look-ahead point is simply the end of the path.
+
+\paragraph{} Once the look-ahead point is located, the direction of the line connecting the youbot's position and the look-ahead point is known. This direction is the direction in which the youbot should go to follow the path. Thus, the resulting speed vector has this direction.
+
+\paragraph{} Finally, the resulting speed is projected on the longitudinal and transversal directions to get the longitudinal and transversal speeds respectively. In addition to the projection, an instance variable (\texttt{obj.acceleration}) is used to create an acceleration factor on the speeds (\texttt{obj.acceleration/obj.maxSpeedReached}). This variable is incremented a each call of the method up until it has reached \texttt{obj.maxSpeedReached}. Then the acceleration factor is no more taken into account.
+
+\subsubsection{Rotation speed}
+\paragraph{} The algorithm described in section \ref{sec:longTransSpeed} is sufficient to move the youbot everywhere in the room. However, because the hokuyo sensor angular range is limited, the robot should also turn around its vertical axis.
+
+\paragraph{} The rotation speed is controlled to align the longitudinal axis of the youbot with the path. To achieve that, the rotation speed is simply set to the angular difference between the longitudinal axis direction of the youbot and the path direction.
+
+\paragraph{} To let time for the youbot to align itself with the path, the controller anticipate by using the path direction of four path segments\footnote{Path segments are used here as unit of length because at this state of the project the resolution of the map is considered as fixed. A more robust way to set this parameter would have been to look for the segment $x$ meters in front of the closest point on the path.} in front of the closest point. If there is not enough path segments in front of the closest point, then the the direction of the last segment is used.
+
+\subsection{\texttt{stop} method}
+\paragraph{} Every time this method is called the youbot decelerates a little bit up until it is stopped. In that case the method outputs a true boolean value (\texttt{isStopped}).
+
+\paragraph{} Before doing anything, this method gets all the speeds by calling \texttt{step} then it decreases those values. The mechanism behind the deceleration is the same as the acceleration mechanism in the \texttt{step} method but reversed.
+
+\subsection{\texttt{destuck} method}
+\paragraph{} The idea behind this method is the following: because the direction in which the youbot goes made it stuck, the opposite direction make it de-stuck.
+
+\paragraph{} Thus, this methods outputs the speeds of the \texttt{stop} method but with the opposite sign up until the youbot is stopped. In that case the method outputs a true boolean value (\texttt{isStopped}).
+
+\subsection{\texttt{rotate} method}
+\paragraph{} The rotation speed is simply set to the angular difference between the longitudinal axis direction of the youbot and the desired orientation set with \texttt{setDesiredOrientation}. Translation speeds are set to zero. When the youbot is stopped the method outputs a true boolean value (\texttt{isStopped}).
+
+
+\subsection{\texttt{stayNearTable} method}
+\paragraph{} This method make the youbot hold an angular position and a radial position relative to a table centre (those coordinates are set in the instance with the \texttt{setRobotPositionNearTable} method and the table position is set with \texttt{setTablePosition}). The orientation of the youbot in that position is such that its longitudinal axis is tangent to the table circumference and such that its always the same side of the youbot that is the closest of the table.
+
+\paragraph{} The \texttt{step} method is tricked by setting the path to a single point which is the position to hold. Thus, both translation speeds are recovered and multiplied by the distance in between the current youbot's position and the point to hold. They are also multiplied by a coefficient which is zero when the rotation speed is greater than a maximum rotation speed and is one when the robot is not rotating. The rotation speed is simply set to the angular difference between the longitudinal axis direction of the youbot and the desired orientation discussed above.
+
+\subsection{\texttt{changeAngleNearTable} method}
+\paragraph{} This method is used to change the angular position around a table without hitting the table.
+
+\paragraph{} The \texttt{step} method is used whith a set point that circumvents the table. This set of point is generated with \texttt{setNewAngleNearTable}. Speeds are obtained by calling the \texttt{stayNearTable} method. Finally, the position of the robot near the table is updated to the new angular position.
+
+\subsection{\texttt{setNewRadiusNearTable} method}
+\paragraph{} This method is used during object manipulations to change the robot's radial position around a table without changing the angular position.
+
+
+\section{Robotic arm controller}
+\subsection{Description of the strategy}
+\paragraph{} The strategy is to not use the V-REP IK. To be able to do that, a few rules are followed during the objects manipulation.
+
+\paragraph{} First, the youbot is placed such that the axis of its first joint (a vertical axis) is contained in a  vertical plane containing a point to grab on an object and the center of the table on which the object to grab lies. Thus, the control of the arm is a two dimensional problem and not a three dimensional problem anymore.
+
+\paragraph{} Then, the holonomic capabilities of the youbot are used to reach objects. Hence, there is no need to control every joints to produce a translation of the gripper.
+
+\paragraph{} The last rule is not to use to much space near the objects. Indeed moving the arm near the objects could make some cylinders roll and fall on the ground.
+
+\paragraph{} The code to control the robotic arm is implemented in a class \texttt{ArmController}.
+
+\paragraph{} The next section discuss the kinematic problem that is solved to move the arm in position to grab an object.
+
+\subsection{\texttt{positioning} method}
+\paragraph{} This method finds the joints position to pick-up an object by a specified point to grab (set with \texttt{setPointToGrab} method).
+
+
+\begin{figure}[!htbp]
+  \centering
+  \includegraphics[width=0.9\linewidth]{fig/ik.eps}
+  \caption{Robotic arm with its joints angle}
+  \label{fig:ik}
+\end{figure}
+
+\paragraph{} As discussed before, the arm positioning can be reduced to a two dimensional problem. Fig.\ref{fig:ik} shows a scheme of the joints and bodies of the robotic arm. The coordinates of the point $C$ are given by:
+
+\begin{equation}
+  x_C = l_1sin\theta_A+l_2sin(\theta_A+\theta_B)\label{eq:xc}
+\end{equation}
+\begin{equation}
+  y_C = l_1cos\theta_A+l_2cos(\pi-(\theta_A+\theta_B))\label{eq:yc}
+\end{equation}
+
+\paragraph{} Equation \ref{eq:xc} and equation \ref{eq:yc} form a system of two nonlinear equations for $\theta_A$ and $\theta_B$. With the strategy that is used $y_C$ is set to the height of the point to grab of the object and $x_C$ is equal to $0.75(l_1+l_2)$ so that the arm is not fully extended. This problem has two solutions, one with the first kink of the arm upwards (as seen of Fig.\ref{fig:ik}) and one with the kink downwards.
+
+\paragraph{} To solve that system, the solver \texttt{vpasolve} of the Matlab's symbolic toolbox is used. This solver has the particularity to search for a solution in a specified range of $\theta_A$ and $\theta_B$ values. The intervals used are $(-1.57; 1.30)$ for $\theta_A$ and $(0; 2.28)$ for $\theta_B$. Those intervals respect the joint ranges and make sure that the solution of the problem is the one with the kink upwards.
+
+\paragraph{} To have the last part of the arm horizontal, the condition on $\theta_C$ is:
+
+\begin{equation}
+  \theta_C = 0.5\pi-(\theta_A+\theta_B)
+\end{equation}
+
+\subsection{\texttt{lift} method}
+\paragraph{} This method tricks \texttt{positioning} by changing $y_C$ to lift object. Joints positions are obtained by calling \texttt{positioning}.
+
+\subsection{\texttt{objectPickup} method}
+\paragraph{} This method is used to get the successive joints position through an entire object pick up sequence.
+
+\paragraph{} The sequence consists in:
+
+\begin{itemize}
+\item First, the youbot gets in position not to close of the table.
+
+\item An initial rotation of $-pi/2$ of the first joint. The arm is perpendicular to the longitudinal axis of the youbot.
+
+\item A positioning of the arm to place the gripper in the correct position to pick up the object.
+
+\item A translation of the youbot to reach the object.
+
+\item Once the youbot is stopped, the gripper is closed and the object is lifted above the table.
+
+\item Then, the youbot backs off a little bit before moving the arm in its initial position.
+
+\item Finally, the arm is lowered a little bit on the youbot so that the object can not slip out of the gripper and a boolean value \texttt{isDone} is set to true.
+\end{itemize}
+
+\paragraph{} The transition in between the different states of the sequence are made when conditions on timers and on the different velocities are verified.
+
+\subsection{\texttt{objectDrop} method}
+\paragraph{} This method is used to get the successive joints position through an entire object drop sequence.
+
+\paragraph{} The sequence consists in:
+
+\begin{itemize}
+\item First, the youbot gets in position not to close of the basket to not interfere with nearby objects.
+
+\item Then, the arm is lifted in its initial position, so that subsequent arm movement does not hit the youbot with the object which could make the object fall.
+
+\item The arm moves up and rotate to have its position to drop the object. Then, the youbot translates near the table to have its arm above the basket (specified by \texttt{setPlaceToDrop}).
+
+\item Once the youbot is stopped, the gripper is opened and the object is dropped in the basket.
+
+\item Then the youbot is backed off, the arm goes in its initial state and a boolean value \texttt{isDone} is set to true to signal the code calling the method that the routine is over.
+\end{itemize}
+
+\paragraph{} The transition in between the different states of the sequence are made when conditions on timers and on the different velocities are verified.
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\end{document}

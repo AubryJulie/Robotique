@@ -1,0 +1,14 @@
+im1 = imread('imgs\2\test5.png');
+pic1 = imread('pictures\trashcan.png');
+lab_im1 = rgb2lab(im1);
+lab_pic1 = rgb2lab(pic1);
+[im1_L_counts,im1_L_binLocations] = imhist(lab_im1(:,:,1));
+[im1_a_counts,im1_a_binLocations] = imhist(lab_im1(:,:,2));
+[im1_b_counts,im1_b_binLocations] = imhist(lab_im1(:,:,3));
+figure;
+subplot(131);
+stem(im1_L_binLocations,im1_L_counts);
+subplot(132);
+stem(im1_a_binLocations,im1_a_counts);
+subplot(133);
+stem(im1_b_binLocations,im1_b_counts);
