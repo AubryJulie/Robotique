@@ -83,8 +83,8 @@ function map()
 	% a length of 30m and a precision of 0.1m in both coordinates.
 	len = 30;
 	width = 30;
-	precision = 10;
-	plan = zeros(len*10+1, width*10+1, 'uint8'); % At first, all cells are unexplored.
+	precision = 5;
+	plan = zeros(len*precision+1, width*precision+1, 'uint8'); % At first, all cells are unexplored.
 
 	% Create a 2D mesh of points, stored in the vectors X and Y. 
 	% Grid to store the points from the area that the hokuyo captor sees.
@@ -126,17 +126,11 @@ function map()
 				[pts, contacts] = youbot_hokuyo(vrep, h, vrep.simx_opmode_buffer, trf);
 				
 				% Initialize map extremities.
-                % Extremity in the Hokuyo visions
-				min_map_new = floor(precision*[min([worldHokuyo1(1), pts(1, :), worldHokuyo2(1)])...
-					min([worldHokuyo1(2), pts(2, :), worldHokuyo2(2)])]);
-				max_map_new = ceil(precision*[max([worldHokuyo1(1), pts(1, :), worldHokuyo2(1)])...
-					max([worldHokuyo1(2), pts(2, :), worldHokuyo2(2)])]);
-                
-                % Extremity of the map center on the Hokuyo vision.
-				min_map = [round((max_map_new(1) + min_map_new(1))/2) - len/2*precision,...
-					round((max_map_new(2) + min_map_new(2))/2) - len/2*precision];
-				max_map = [round((max_map_new(1) + min_map_new(1))/2) + len/2*precision,...
-					round((max_map_new(2) + min_map_new(2))/2) + len/2*precision];
+                % Extremity of the map center on the initial youbot positio,.
+				min_map = [round(precision*youbotPos(1)) - len/2*precision,...
+					round(precision*youbotPos(2)) - len/2*precision];
+				max_map = [round(precision*youbotPos(1)) + len/2*precision,...
+					round(precision*youbotPos(2)) + len/2*precision];
 
                 % Find the points inside the vision of the Hokuyo (center on
                 % the youbot position).
@@ -167,7 +161,7 @@ function map()
                 end
                 
 				% Vector containing the position of the obstacles. Unique
-				% erases the identique row.
+				% erases the identique rows.
 				new_obstacle = (unique(round(precision*[transpose(pts(1, contacts)) ...
                     transpose(pts(2, contacts))]),'rows') - min_map + 1);
 				
@@ -176,11 +170,220 @@ function map()
 					plan(new_obstacle(i,1), new_obstacle(i,2)) = blocked_cell;
 				end
 				
-				fsm = 'rotate';
+				% begin the displacement by a rotation of180 degree
+                trajectory_full = [round(precision*youbotPos(1))- min_map(1)+1 round(precision*youbotPos(2))- min_map(1)+1];
+                pos_trajectory_full = 1;
+                new_angl = youbotEuler(3)+pi;
+				pos_update = [youbotPos(1) youbotPos(2)];
+				angle_update = youbotEuler(3);
+				fsm = 'new_destination';
 				step = 'finished';
 				% Plot of the total map.
 				figure;
 				imagesc(plan)
+				
+			elseif strcmp(fsm, 'new_destination')
+				% Define new goal
+				% Explore the map to find accessible unexplored cells.
+				boundaries = sparse([],[],[],double(max_map(1)-min_map(1)+1), double(max_map(2)-min_map(2)+1));
+				for i = 2 : size(plan, 1)-1             
+					for j = 2 : size(plan, 2)-1               
+						% if visited cell
+						if plan(i,j) == free_cell
+							%if in contact with unexplored cells
+							if((plan(i-1,j) == unexplored_cell)||(plan(i+1,j) == unexplored_cell)|| ...
+									(plan(i,j-1) == unexplored_cell)||(plan(i,j+1) == unexplored_cell))
+								boundaries = boundaries + ...
+									sparse(double(i),double(j), 1, double(max_map(1)-min_map(1)+1),...
+									double(max_map(2)-min_map(2)+1));
+							end
+						end
+					end
+				end
+				
+				% extract rows and colums from boundaries
+				[pos_row, pos_col] = find(boundaries == 1);
+				
+				% If the map is completely explored, navigation is finished.
+				if isempty(pos_row)
+					fsm = 'finished';
+				else
+					new_start = [round(precision*(youbotPos(1)))-min_map(1)+1, round(precision*(youbotPos(2)))-min_map(2)+1];
+					
+					% find destination with max distance for the first
+					% trajectory_full (to extend the map a maximum at the begining)
+					% and min for the others.
+					if first_traj
+						index_goal = find(hypot(pos_row-new_start(1), pos_col-new_start(2))==...
+							max(hypot( pos_row-new_start(1), pos_col-new_start(2))),1,'first');
+						first_traj = false;
+					else
+						index_goal = find(hypot(pos_row-new_start(1), pos_col-new_start(2))==...
+							min(hypot( pos_row-new_start(1), pos_col-new_start(2))),1,'first');
+					end
+				 
+					new_goal = [pos_col(index_goal) pos_row(index_goal)];
+					% D* algorithm for planning
+					%figure;
+					ds = Dstar(plan);    % create navigation object
+					ds.plan(new_goal);   % create plan for specified goal
+					%!!!TOCHECK!!!trajectory_full = ds.path(flip(NewStart));
+					trajectory_full = ds.query(start);      % animate path from this start location
+
+					% to have x than y 
+					trajectory_full = flip(trajectory_full,2); 
+					if size(trajectory_full,1)>1
+						
+						trajectory2 = zeros(size(trajectory_full,1), 1);
+						% Check if the next position in the trajectory_full is in a straight line. if it is not
+						% put the given element in trajectory2 to 1. (rotation needed)
+						if ((trajectory_full(1,1)- new_start(1)) ~= (trajectory_full(2,1)-trajectory_full(1,1)))||...
+								((trajectory_full(1,2)- new_start(2)) ~= (trajectory_full(2,2)-trajectory_full(1,2)))
+								trajectory2(1) = 1;
+						end
+						for i = 2: length(trajectory_full)-1
+							if ((trajectory_full(i,1)-trajectory_full(i-1,1)) ~= (trajectory_full(i+1,1)-trajectory_full(i,1)))||...
+								((trajectory_full(i,2)-trajectory_full(i-1,2)) ~= (trajectory_full(i+1,2)-trajectory_full(i,2)))
+								trajectory2(i) = 1;
+							end
+						end
+						% Add the before last element to 1. (To rotate before arriving to the goal position.)
+						trajectory2(end-1) = 1;
+						trajectory2(end) = 0;
+						trajectory = trajectory_full(trajectory2 == 1, :);
+					end
+					
+					postrajectory = 1;
+					% !!!TOCHECK!!! Operation use to change from the world referentiel to the Hokuyo referentiel.
+					% Try to do this with trox
+					new_angl = atan(((precision*youbotPos(1)-min_map(1)+1)-trajectory(1,1))/...
+						(trajectory(1,2)) - (precision*youbotPos(2)-min_map(2)+1));
+					if (trajectory(1,2)) - (precision*youbotPos(2)-min_map(2)+1) > 0
+                            new_angl = new_angl + pi;
+                    end   
+					fsm = 'rotate';
+				end        
+
+			 % End of navigation.
+			 elseif  strcmp(fsm, 'finished')  
+				pause(1);
+				step = 'finished';
+				 % save the map obtain by the navigation
+				save('plan.mat','plan'); 
+				save('min_map.mat', 'min_map');
+				save('max_map.mat', 'max_map');
+				fprintf('Switching to step: %s\n', step);
+			 else
+				fsm = 'finished';
+				error('Unknown state %s.', fsm);
+			 end
+			% Update afer a distance of 1m or a rotation of 30 degree
+			if (sqrt((youbotPos(1)-pos_update(1))^2 + (youbotPos(2)-pos_update(2))^2) >= 1)...
+				||(abs(angdiff(angle_update - youbotEuler(3))) > (pi/6))
+
+				pos_update = [youbotPos(1) youbotPos(2)];
+				angle_update = youbotEuler(3);
+				%% Read data from the depth sensor, more often called the Hokuyo.
+				% Determine the position of the Hokuyo with global coordinates (world reference frame).
+				trf = transl(youbotPos) * trotx(youbotEuler(1)) * troty(youbotEuler(2)) * trotz(youbotEuler(3));
+				worldHokuyo1 = homtrans(trf, [h.hokuyo1Pos(1); h.hokuyo1Pos(2); h.hokuyo1Pos(3)]);
+				worldHokuyo2 = homtrans(trf, [h.hokuyo2Pos(1); h.hokuyo2Pos(2); h.hokuyo2Pos(3)]);
+				
+				% Use the sensor to detect the visible points, within the world frame. 
+				[pts, contacts] = youbot_hokuyo(vrep, h, vrep.simx_opmode_buffer, trf);
+				%update map extremity
+				min_map_new = round(precision*[min([worldHokuyo1(1), pts(1, :), worldHokuyo2(1)])...
+					min([worldHokuyo1(2), pts(2, :), worldHokuyo2(2)])]) - 1;
+				max_map_new = round(precision*[max([worldHokuyo1(1), pts(1, :), worldHokuyo2(1)])...
+					max([worldHokuyo1(2), pts(2, :), worldHokuyo1(2)])]) + 1;
+				% if map need to be extended
+				% modify min x
+				if (min_map_new(1) < min_map(1))
+					%update plan
+					min_map_tmp = [min_map_new(1)-5*precision min_map(2)]
+					%plan = horzcat(zeros(size(plan,1), min_map(2) - min_map_tmp(2), 'uint8'),...
+					%plan, zeros(size(plan,1), max_map_new(2) - max_map(2), 'uint8'));
+					plan = vertcat(zeros(min_map(1) - min_map_tmp(1), size(plan,2), 'uint8'),...
+					plan, zeros(max_map_new(1) - max_map(1), size(plan,2), 'uint8'));
+					% update trajectory_full
+					trajectory_full = trajectory_full + min_map - min_map_tmp;
+					% update min_map
+					min_map = min_map_tmp;
+				end
+				% modify min y
+				if (min_map_new(2) < min_map(2))
+					%update plan
+					min_map_tmp = [min_map(1) min_map_new(2) - 5*precision]
+					plan = horzcat(zeros(size(plan,1), min_map(2) - min_map_tmp(2), 'uint8'),...
+					plan, zeros(size(plan,1), max_map_new(2) - max_map(2), 'uint8'));
+					%plan = vertcat(zeros(min_map(1) - min_map_tmp(1), size(plan,2), 'uint8'),...
+					%plan, zeros(max_map_new(1) - max_map(1), size(plan,2), 'uint8'));
+					% update trajectory_full
+					trajectory_full = trajectory_full + min_map - min_map_tmp;
+					% update min_map
+					min_map = min_map_tmp;
+				end
+				% modify max x
+				if (max_map_new(1) > max_map(1))
+					%update plan
+					max_map_tmp = [max_map_new(1)+5*precision max_map(2)]
+					%plan = horzcat(zeros(size(plan,1), min_map(2) - min_map_new(2), 'uint8'),...
+					%plan, zeros(size(plan,1), max_map_tmp(2) - max_map(2), 'uint8'));
+					plan = vertcat(zeros(min_map(1) - min_map_new(1), size(plan,2), 'uint8'),...
+					plan, zeros(max_map_tmp(1) - max_map(1), size(plan,2), 'uint8'));
+					% update min_map
+					max_map = max_map_tmp;
+				end
+				% modify max y
+				if (max_map_new(2) > max_map(2))
+											%update plan
+					max_map_tmp = [max_map(1) max_map_new(2)+5*precision]
+					plan = horzcat(zeros(size(plan,1), min_map(2) - min_map_new(2), 'uint8'),...
+					plan, zeros(size(plan,1), max_map_tmp(2) - max_map(2), 'uint8'));
+					%plan = vertcat(zeros(min_map(1) - min_map_new(1), size(plan,2), 'uint8'),...
+					%plan, zeros(max_map_tmp(1) - max_map(1), size(plan,2), 'uint8'));
+					% update min_map
+					max_map = max_map_tmp;
+				end
+				
+				% update walls
+				new_obstacle = (unique(round(precision*[transpose(pts(1, contacts)) ...
+				transpose(pts(2, contacts))]),'rows') - min_map + 1);
+				% Add blocked area.
+				for i = 1 : length(new_obstacle)
+					plan(new_obstacle(i,1), new_obstacle(i,2)) = blocked_cell;
+				end
+				
+				%update visited area
+				% Find the points inside the vision of the Hokuyo (center on
+				% the youbot position).
+				index_map = inpolygon(X, Y,...
+					precision*[worldHokuyo1(1), pts(1, :), worldHokuyo2(1)]- ...
+					round(precision*youbotPos(1)),...
+					precision*[worldHokuyo1(2), pts(2, :), worldHokuyo2(2)]- ...
+					round(precision*youbotPos(2)));
+				
+				% Find the points inside the vision of the Hokuyo on the
+				% plan coordinate. (coordinate of X + youbot position) ->
+				% gives the position in 10 centimeters, - min map -> to have
+				% the minimum value = 0, + 1 -> indices in matlab begin to
+				% 1
+				new_visited = [transpose(X(index_map) - min_map(1) + ...
+					round(precision*youbotPos(1)) + 1)...
+					transpose(Y(index_map) - min_map(2) + ...
+					round(precision*youbotPos(2)) + 1);...
+					(round(precision*worldHokuyo1(1))- min_map(1)+1)...
+					(round(precision*worldHokuyo1(2))- min_map(2)+1);...
+					(round(precision*youbotPos(1))- min_map(1)+1)...
+					(round(precision*youbotPos(2))- min_map(2)+1)];
+				
+				% Add visited area. (Plan center on the vision of the
+				% Hokoyo.)
+				for i = 1 : length(new_visited)
+					if plan(new_visited(i,1), new_visited(i,2)) == unexplored_cell
+						plan(new_visited(i,1), new_visited(i,2)) = free_cell;
+					end
+				end
 			end
 		elseif strcmp(step, 'finished')
 			pause(3);
@@ -261,7 +464,7 @@ function map()
 					for i = -3:3
 						for j = -3:3
 							if plan(new_traj(indice).x + i, new_traj(indice).y + j) == 2
-								disp('Current trajectory is wrong, compute a new trajectory');
+								disp('Current trajectory_full is wrong, compute a new trajectory_full');
 								fsm = 'check_end_mapping';
 								restart_traj = true;
 								indice = 1;
