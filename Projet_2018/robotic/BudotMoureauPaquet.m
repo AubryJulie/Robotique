@@ -1,4 +1,5 @@
 function youbotfinalendtest2()
+    addpath('C:\trs\youbot');
     %% Initiate the connection to the simulator.    
     disp('Program started');
     vrep = remApi('remoteApi');
@@ -71,6 +72,10 @@ function youbotfinalendtest2()
     maxMapInter = [0 0];
     NewGoal = [0 0];
     resol = 4; % 25 cm.
+    tab = [];
+    tab2 = [];
+    tab3 = [];
+    tab4 = [];
 
     % Initialise save matrix for navigation. 
     initTraj = true;
@@ -102,7 +107,7 @@ function youbotfinalendtest2()
 
     % Initialise the state machine. 
     fsm = 'start';
-    step = 'vision';%'navigation';
+    step = 'navigation';%'vision';%
     interfsm = fsm;
     interstep = step;
     interval = 'nul';
@@ -664,7 +669,7 @@ function youbotfinalendtest2()
                         % We chose Dstar because it is faster than the others.
                         %figure;
                         ds = Dstar(totalMap);    % create navigation object
-                        ds.plan(NewGoal);       % create plan for specified goal
+                        ds.plan(NewGoal)       % create plan for specified goal
                         
                         trajectory = ds.path(flip(NewStart));     % animate path from this start location
                         %ds.path(flip(NewStart)) 
